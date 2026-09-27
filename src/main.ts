@@ -1,374 +1,265 @@
 import * as THREE from 'three';
-import { Game, PALETTE, type Role, type Pose, type Pattern } from './game';
+import {
+  Game,
+  PALETTE,
+  TARGET_COUNT,
+  MAX_MISSES,
+  TAG_RANGE,
+  type Role,
+  type Pose,
+  type Pattern,
+} from './game';
+import { OBSTACLES, ZONES } from './map';
+import { cameraView, movementDirection } from './camera';
 import { buildWorld, createAvatar, type Avatar } from './world';
 import './style.css';
 
-const icons: Record<string, string> = {
-  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
-  hide: '<path d="m3 3 18 18M10.5 5.1A12 12 0 0 1 22 12a18 18 0 0 1-3.1 3.7M6.3 6.3A19 19 0 0 0 2 12s3.5 7 10 7a11 11 0 0 0 5.7-1.7M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
-  arrow: '<path d="M4 12h16m-6-6 6 6-6 6"/>',
-  sound: '<path d="m11 4-6 5H2v6h3l6 5V4Zm4 4a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
-  mute: '<path d="m11 4-6 5H2v6h3l6 5V4Zm5 5 6 6m0-6-6 6"/>',
-  help: '<circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 1 1 5 2c-1 .8-2 1-2 3m0 3v.1"/>',
-  dropper: '<path d="m14 5 5 5M3 21l4-1L20 7a2.1 2.1 0 0 0-3-3L4 17l-1 4Z"/>',
-  leaf: '<path d="M20 3C8 2 2 9 5 16s17 8 15-13ZM5 20 16 9"/>',
-  rotate: '<path d="M4 11a8 8 0 1 1 2 7M4 4v7h7"/>',
-  minus: '<path d="M5 12h14"/>',
-  plus: '<path d="M5 12h14m-7-7v14"/>',
-  close: '<path d="m6 6 12 12M6 18 18 6"/>',
-  stand: '<circle cx="12" cy="4" r="2"/><path d="M12 7v8m0-6L7 12m5-3 5 3m-5 3-4 6m4-6 4 6"/>',
-  crouch:
-    '<circle cx="11" cy="5" r="2"/><path d="m11 8-1 5 5 3-5 4h7m-6-10 5 2 3-3M10 13l-5 3 3 4H3"/>',
-  flat: '<circle cx="5" cy="15" r="2"/><path d="M8 16h7l5 3m-9-3 3 4m1-4 5-3M2 22h20"/>',
-  spark: '<path d="m12 2 2.7 7.3L22 12l-7.3 2.7L12 22l-2.7-7.3L2 12l7.3-2.7L12 2Z"/>',
-  pause: '<path d="M8 5v14m8-14v14"/>',
-  check: '<path d="m5 12 4 4L19 6"/>',
-};
-const icon = (name: string, cls = '') =>
-  `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.spark}</svg>`;
-const brandMark =
-  '<svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="20" fill="#ee714d"/><path d="M44 36c12 0 11 17 1 17-7 0-9-9-3-9M44 36H24c-15 0-17-19-4-23 9-3 22 4 25 13z" fill="none" stroke="#fff8e9" stroke-width="5" stroke-linecap="round"/><circle cx="22" cy="23" r="3" fill="#fff8e9"/></svg>';
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) =>
   document.querySelector<T>(selector)!;
+const svg = (path: string) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+const icons = {
+  eye: svg(
+    '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  ),
+  paint: svg('<path d="m15 3 6 6-10 10H5v-6L15 3ZM3 21h5M12 6l6 6"/>'),
+  arrow: svg('<path d="M4 12h16m-6-6 6 6-6 6"/>'),
+  pause: svg('<path d="M8 5v14m8-14v14"/>'),
+  close: svg('<path d="m6 6 12 12M6 18 18 6"/>'),
+  speaker: svg('<path d="m11 4-6 5H2v6h3l6 5V4Zm4 4a6 6 0 0 1 0 8"/>'),
+  expand: svg('<path d="M4 9V4h5m6 0h5v5M4 15v5h5m6 0h5v-5"/>'),
+  help: svg('<circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 1 1 5 2c-1 .8-2 1-2 3m0 3v.1"/>'),
+};
+const mark =
+  '<svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="20" fill="#ec7750"/><path d="M44 36c12 0 11 17 1 17-7 0-9-9-3-9M44 36H24c-15 0-17-19-4-23 9-3 22 4 25 13z" fill="none" stroke="#fff8e9" stroke-width="5" stroke-linecap="round"/><circle cx="22" cy="23" r="3" fill="#fff8e9"/></svg>';
 
 $('#app').innerHTML = `
-  <div class="shell">
-    <header>
-      <a class="brand" href="./" aria-label="Meccha Chameleon home">${brandMark}<div class="wordmark">MECCHA<span>CHAMELEON</span></div></a>
-      <nav class="top-links" aria-label="Main navigation">
-        <span class="nav-button active"><span class="dot"></span> The playground</span>
-        <button class="nav-button" id="help-button">${icon('help')} How to play</button>
-        <span class="top-divider"></span>
-        <button class="nav-button" id="sound-button" aria-pressed="false">${icon('mute')} Sound off</button>
-      </nav>
-    </header>
-    <main>
-      <section class="intro" aria-labelledby="page-title">
-        <div><p class="eyebrow">The art of hiding in plain sight</p><h1 id="page-title">Out of sight. <em>Into the fun.</em></h1></div>
-        <div class="intro-note">${icon('spark', 'doodle')}<p>A little paint. A perfect pose.<br>Be the thing nobody notices.</p></div>
-      </section>
-      <div class="game-layout">
-        <section class="stage-card" aria-label="Game playground">
-          <div id="stage" class="stage" data-phase="ready">
-            <div class="scene-label"><div class="room-tag"><span>01</span> YOUR LITTLE HIDEAWAY</div><h2>The art room</h2></div>
-            <div class="map-time" id="timer"><span class="live-dot"></span> A little room, endless possibilities</div>
-            <div class="round-banner" id="round-banner" role="status"></div>
-            <div class="stage-hint"><small id="hint-label">WELCOME TO THE COLOR CLUB</small><p id="stage-hint">Make yourself at home.<br>Then make yourself <strong>disappear.</strong></p></div>
-            <div class="stage-tools">
-              <button class="tool-btn" id="rotate" aria-label="Rotate camera" title="Rotate camera (Q)">${icon('rotate')}</button>
-              <button class="tool-btn" id="zoom-out" aria-label="Zoom out" title="Zoom out">${icon('minus')}</button>
-              <button class="tool-btn" id="zoom-in" aria-label="Zoom in" title="Zoom in">${icon('plus')}</button>
-              <button class="tool-btn" id="pause" aria-label="Pause game" title="Pause (Escape)">${icon('pause')}</button>
-            </div>
-            <div class="touch-controls" aria-label="Movement controls"><button data-move="up" aria-label="Move forward">↑</button><button data-move="left" aria-label="Move left">←</button><button data-move="down" aria-label="Move backward">↓</button><button data-move="right" aria-label="Move right">→</button></div>
-            <div class="pause-screen" id="pause-screen" hidden><p class="eyebrow">Take a breather</p><h2>Perfectly still.</h2><button class="start-button" id="resume">Keep playing ${icon('arrow')}</button><button class="secondary-button" id="restart">Start a new round</button></div>
-          </div>
-          <div class="stage-bottom"><div class="keyboard-hint"><span class="key-pair"><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span> Move</span><span class="key-pair"><kbd>E</kbd> Match color</span><span class="key-pair optional"><kbd>R</kbd> Pose</span><span class="key-pair optional"><kbd>Q</kbd> Rotate</span></div><span class="view-label">${icon('leaf')} CLICK THE FLOOR TO MOVE</span></div>
-        </section>
-        <aside class="sidebar" aria-label="Game controls">
-          <div class="sidebar-head"><p class="eyebrow">Your true colors</p><span class="edition">SOLO CLUB</span></div>
-          <div class="role-switch" aria-label="Choose role"><button data-role="hider" class="selected" aria-pressed="true">${icon('hide')} Hide</button><button data-role="seeker" aria-pressed="false">${icon('eye')} Seek</button></div>
-          <div class="avatar-row"><h2 id="avatar-heading">Born to<br><span>blend in.</span></h2><div class="avatar-preview" id="avatar-preview" aria-label="Your painted character"></div></div>
-          <div class="paint-controls" id="paint-controls">
-            <div class="control-heading">Pick your palette <span>01 / PAINT</span></div>
-            <div class="palette" id="palette" aria-label="Body color"></div>
-            <div class="paint-details"><button id="sample" class="sample-button">${icon('dropper')} Match surface <kbd>E</kbd></button><label class="custom-color" title="Choose any body color"><input id="custom-color" type="color" value="#83bda8" aria-label="Custom body color"> Custom</label></div>
-            <div class="pattern-row" aria-label="Paint pattern"><button class="pattern-button selected" data-pattern="solid" aria-pressed="true"><span class="pattern-dot"></span> Solid</button><button class="pattern-button" data-pattern="spots" aria-pressed="false"><span class="pattern-dot spots"></span> Spots</button><button class="pattern-button" data-pattern="stripes" aria-pressed="false"><span class="pattern-dot stripes"></span> Stripes</button></div>
-            <div class="control-heading">Strike a pose <span>02 / HIDE</span></div>
-            <div class="pose-row" aria-label="Character pose"><button class="pose-button selected" data-pose="stand" aria-pressed="true">${icon('stand')} Stand</button><button class="pose-button" data-pose="crouch" aria-pressed="false">${icon('crouch')} Crouch</button><button class="pose-button" data-pose="flat" aria-pressed="false">${icon('flat')} Flatten</button></div>
-          </div>
-          <div class="seeker-controls" id="seeker-controls"><div class="control-heading">A room full of secrets <span>01 / SEEK</span></div><h3>Something looks a little… alive.</h3><p>Five chameleons have painted themselves into this room. Click them before time runs out.</p><div class="target-dots" id="target-dots"></div><div class="seeker-stat"><span>Chameleons found</span><strong id="found-count">0 / 5</strong></div><div class="seeker-stat"><span>Mistakes remaining</span><strong id="miss-count">5 / 5</strong></div><p>Rotate the room with <kbd>Q</kbd> to see behind furniture. Look for little eyes and curly tails.</p></div>
-          <div class="blend-box" id="blend-box"><div class="blend-top"><span>${icon('leaf')} Camouflage match</span><strong id="blend-value">0%</strong></div><div class="meter"><div class="meter-fill" id="blend-fill"></div></div><div class="blend-caption" id="blend-caption">Find a surface. Borrow its color.</div></div>
-          <button class="start-button" id="start">Let's play hide & seek ${icon('arrow')}</button><p class="solo-note">Just you, a little color & two very curious seekers.</p>
-        </aside>
-      </div>
-      <section class="steps" aria-label="The basics">
-        <div class="step"><span class="step-number">01</span><div><h3>Find your happy place.</h3><p>A quiet corner. A plant. That suspiciously cozy rug.</p></div><span class="step-icon">${icon('leaf')}</span></div>
-        <div class="step"><span class="step-number">02</span><div><h3>A little color goes a long way.</h3><p>Borrow a shade from the room. Become part of it.</p></div><span class="step-icon">${icon('dropper')}</span></div>
-        <div class="step"><span class="step-number">03</span><div><h3>Nothing to see here.</h3><p>Strike a pose, stay still, and let them walk right past.</p></div><span class="step-icon">${icon('hide')}</span></div>
-      </section>
-    </main>
-    <footer class="footer"><span>An independent fan-made playground. Inspired by <a href="https://store.steampowered.com/app/4704690/MECCHA_CHAMELEON/" target="_blank" rel="noopener noreferrer">Meccha Chameleon ↗</a></span><span>Life’s more fun in full color.</span></footer>
+<main id="stage" data-phase="ready" data-role="hider" data-camera="third-person" aria-label="3D art school playground">
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Meccha Chameleon home">${mark}<span>MECCHA<small>CHAMELEON</small></span></a>
+    <span class="map-label">THE OLD ART SCHOOL <span>64 × 56 m · 6 rooms</span></span>
+    <nav aria-label="Game tools"><button id="help-button" aria-label="How to play" title="How to play">${icons.help}</button><button id="sound-button" aria-label="Enable sound" title="Toggle sound" aria-pressed="false">${icons.speaker}</button><button id="fullscreen" aria-label="Fullscreen" title="Fullscreen">${icons.expand}</button><button id="pause" aria-label="Pause game" title="Pause (Esc)">${icons.pause}</button></nav>
+  </header>
+  <section class="hud" aria-label="Round information">
+    <div class="location"><span class="tiny">YOU ARE IN</span><strong id="zone">Reception</strong><span id="coordinates" class="coordinates">0.0 / 24.0</span></div>
+    <div class="clock"><span id="phase-label">YOUR NEXT HIDING PLACE</span><strong id="timer">03:00</strong><small id="camera-label">THIRD-PERSON HIDER</small></div>
+    <div id="objective" class="objective"><span class="tiny" id="objective-label">CAMOUFLAGE</span><strong id="objective-value">0%</strong><span id="objective-detail">Find a surface. Borrow its color.</span></div>
+  </section>
+  <div id="crosshair" aria-label="Aim at the center of the screen"><span></span><span></span><span></span><span></span></div>
+  <div id="aim-label" class="aim-label"></div>
+  <section id="lobby" class="lobby" aria-labelledby="lobby-title">
+    <p class="eyebrow">HIDE IN PLAIN SIGHT</p><h1 id="lobby-title">A whole world<br>to <em>disappear in.</em></h1>
+    <p class="lobby-description">An abandoned art school. Six rooms full of cover.<br>Paint yourself into the scenery—or hunt from eye level.</p>
+    <div class="role-switch" aria-label="Choose role"><button data-role="hider" aria-pressed="true" class="selected">${icons.paint}<span>Hide<small>Third-person camera</small></span></button><button data-role="seeker" aria-pressed="false">${icons.eye}<span>Seek<small>First-person camera</small></span></button></div>
+    <p id="role-description" class="role-description">You have a minute to hide. Paint, pose, and stay out of sight while three seekers search the school.</p>
+    <button id="start" class="primary">Enter as hider ${icons.arrow}</button>
+    <div class="lobby-controls"><span><kbd>W A S D</kbd> move</span><span><span class="mouse-icon">↔</span> mouse to look</span><span><kbd>Space</kbd> jump</span></div>
+    <p class="solo-note">Single-player with AI opponents · Original fan-made adaptation</p>
+  </section>
+  <div id="play-hud" class="play-hud" hidden>
+    <div class="round-banner" id="round-banner" role="status"></div>
+    <div class="exposure" id="exposure"><span>NOTICED <strong id="suspicion">0%</strong></span><div><i id="suspicion-fill"></i></div></div>
+    <div class="bottom-left"><span class="camera-chip" id="view-chip">THIRD PERSON</span><button id="paint-button" class="glass-button">${icons.paint} Paint & pose <kbd>F</kbd></button><button id="skip" class="glass-button">I'm ready ${icons.arrow}</button></div>
+    <div class="bottom-center"><button id="enter-room" class="glass-button">Click to capture mouse</button><span id="control-hint">WASD move · Mouse look · Space jump · E sample · F paint · Esc release</span></div>
+    <div class="bottom-right" id="seeker-count"><strong id="found-count">0 / 8</strong><span>CHAMELEONS FOUND</span><small>Misses left: <b id="miss-count">8 / 8</b></small></div>
   </div>
-  <dialog id="help-dialog" aria-labelledby="help-title"><button class="close-dialog" data-close="help-dialog" aria-label="Close instructions">${icon('close')}</button><p class="eyebrow">A crash course in doing nothing</p><h2 id="help-title">Paint. Pose. Poof.</h2><p>Welcome to your own little camouflage club. Choose a role, then make the art room your playground.</p><div class="instruction"><span class="number">01</span><div><b>Hide: you have 25 seconds to get ready.</b><p>Move with WASD, arrow keys, the touch buttons, or click the floor. Get next to a prop or onto a rug. Press E to sample its color.</p></div></div><div class="instruction"><span class="number">02</span><div><b>Make yourself hard to notice.</b><p>Pick a color and pattern, then press R to crouch or flatten. Good color matching and a low pose reduce detection. Stay still for 45 seconds while two seekers patrol. You can repaint and move, but moving draws attention!</p></div></div><div class="instruction"><span class="number">03</span><div><b>Seek: a tiny room, five sneaky faces.</b><p>Find and click all five hidden chameleons in 60 seconds. You have five mistakes. Press Q or the rotate button to look behind props; use + and − to zoom.</p></div></div><p><kbd>Esc</kbd> pauses your round. Your best score stays on this browser. All characters in this playground are computer controlled.</p><button class="start-button" data-close="help-dialog">I've got a good hiding feeling ${icon('arrow')}</button></dialog>
-  <dialog id="result-dialog" aria-labelledby="result-title"><button class="close-dialog" data-close="result-dialog" aria-label="Close results">${icon('close')}</button><span class="result-stamp" id="result-stamp">✦</span><p class="eyebrow" id="result-eyebrow">An artist of disappearance</p><h2 id="result-title">A perfect vanishing act.</h2><p id="result-description"></p><div class="result-score"><div><strong id="round-score">0</strong><small>ROUND SCORE</small></div><div><strong id="best-score">0</strong><small>PERSONAL BEST</small></div></div><div class="result-actions"><button class="secondary-button" id="switch-role">Try seeking</button><button class="start-button" id="play-again">One more round ${icon('arrow')}</button></div></dialog>
-  <div class="toast" id="toast" role="status"></div><div id="a11y-status" class="sr-only" aria-live="polite"></div>`;
+  <aside id="paint-panel" class="paint-panel" hidden aria-label="Paint and pose">
+    <div class="panel-head"><div><p class="eyebrow">YOUR TRUE COLORS</p><h2>Become the scenery.</h2></div><button id="close-paint" aria-label="Close paint panel">${icons.close}</button></div>
+    <div id="avatar-preview" aria-label="Your painted character"></div>
+    <div class="control-heading">Body paint <span>01 / COLOR</span></div><div class="palette" id="palette"></div>
+    <div class="color-tools"><button id="sample">${icons.paint} Sample ahead <kbd>E</kbd></button><label><input id="custom-color" type="color" value="#f4efdf" aria-label="Custom body color">Custom</label></div>
+    <div class="pattern-row"><button data-pattern="solid" class="selected" aria-pressed="true">Solid</button><button data-pattern="spots" aria-pressed="false">Spots</button><button data-pattern="stripes" aria-pressed="false">Stripes</button></div>
+    <div class="control-heading">Your silhouette <span>02 / POSE</span></div><div class="pose-row"><button data-pose="stand" aria-pressed="true" class="selected">Stand</button><button data-pose="crouch" aria-pressed="false">Crouch</button><button data-pose="flat" aria-pressed="false">Flatten</button></div>
+    <div class="blend-box"><span>Nearby surface match <strong id="blend-value">0%</strong></span><div class="meter"><i id="blend-fill"></i></div><p id="blend-caption">Get close to a surface and sample its color.</p></div>
+    <button id="finish-paint" class="primary">Back to hiding ${icons.arrow}</button><p class="panel-note">The clock keeps ticking while you paint.</p>
+  </aside>
+  <div class="touch-controls" hidden aria-label="Touch movement"><button data-move="up" aria-label="Move forward">↑</button><button data-move="left" aria-label="Move left">←</button><button data-move="down" aria-label="Move backward">↓</button><button data-move="right" aria-label="Move right">→</button></div><div class="touch-actions" hidden><button id="touch-jump" aria-label="Jump">↑</button><button id="touch-tag" aria-label="Tag at crosshair">◎</button></div>
+  <section class="pause-screen" id="pause-screen" hidden aria-label="Game paused"><p class="eyebrow">TAKE A BREATHER</p><h2>Perfectly still.</h2><p>The round is paused. Take your time.</p><button id="resume" class="primary">Resume & capture mouse ${icons.arrow}</button><button id="restart" class="secondary">Restart this round</button><button id="back-lobby" class="text-button">Choose a different role</button></section>
+  <div id="toast" class="toast" role="status"></div><div id="a11y-status" class="sr-only" aria-live="polite"></div>
+</main>
+<dialog id="help-dialog" aria-labelledby="help-title"><button class="close-dialog" data-close="help-dialog" aria-label="Close instructions">${icons.close}</button><p class="eyebrow">GET LOST. BLEND IN.</p><h2 id="help-title">This is hide & seek.</h2><p><b>Seeker — first person.</b> Walk through the school and aim the center crosshair at a chameleon. Left-click to tag within ${TAG_RANGE} meters. Walls and furniture block your shot. Find all eight in three minutes; eight misses end the round.</p><p><b>Hider — third person.</b> You get 60 seconds to find a hiding place, then survive a two-minute search. Press F to paint your body. Aim at a surface and press E to sample its color. Crouch or flatten, get behind cover, and stay still. A close inspection can still give you away.</p><div class="key-guide"><span><kbd>WASD</kbd> Move / strafe</span><span><kbd>Mouse</kbd> Look around</span><span><kbd>Space</kbd> Jump</span><span><kbd>C / Ctrl</kbd> Crouch</span><span><kbd>F</kbd> Paint panel</span><span><kbd>R</kbd> Cycle poses</span><span><kbd>E</kbd> Sample color</span><span><kbd>Esc</kbd> Pause / release mouse</span></div><p>Click the room to capture your mouse. If mouse capture isn't available, drag the room to look. On touch screens, use the movement pad, drag to look, and tap ◎ to tag.</p><p class="muted">Single-player browser adaptation. This version has AI opponents; it does not have online multiplayer.</p><button class="primary" data-close="help-dialog">Got it ${icons.arrow}</button></dialog>
+<dialog id="result-dialog" aria-labelledby="result-title"><p class="eyebrow" id="result-eyebrow">ROUND COMPLETE</p><h2 id="result-title">What chameleon?</h2><p id="result-description"></p><div class="result-score"><div><strong id="round-score">0</strong><span>ROUND SCORE</span></div><div><strong id="best-score">0</strong><span>PERSONAL BEST</span></div></div><button id="play-again" class="primary">Play another round ${icons.arrow}</button><button id="switch-role" class="secondary">Switch roles</button><button id="result-lobby" class="text-button">Back to the school</button></dialog>`;
 
-const game = new Game();
+let game = new Game();
 let chosenRole: Role = 'hider';
 let paused = false;
+let paintOpen = false;
+let ready = false;
+let controlsEntered = false;
+let captureUnavailable = false;
+let ignoreUnlock = false;
+let yaw = 0;
+let pitch = -0.13;
+let thirdPersonDistance = 4.1;
 let sound = false;
 let best = 0;
 try {
   best = Number(localStorage.getItem('color-club-best')) || 0;
   sound = localStorage.getItem('color-club-sound') === 'on';
-} catch {
-  /* Storage may be unavailable in private contexts. */
-}
+} catch {}
+const stage = $('#stage');
+const help = $<HTMLDialogElement>('#help-dialog');
+const result = $<HTMLDialogElement>('#result-dialog');
+const keys = new Set<string>();
+const coarse = matchMedia('(pointer: coarse)').matches;
+let renderer: THREE.WebGLRenderer;
+let camera: THREE.PerspectiveCamera;
+let scene: THREE.Scene;
+let playerAvatar: Avatar;
+let previewAvatar: Avatar;
+let previewRenderer: THREE.WebGLRenderer;
+let previewScene: THREE.Scene;
+let previewCamera: THREE.PerspectiveCamera;
+let tagger: THREE.Group;
+let hunterAvatars: Avatar[] = [];
+let targetAvatars: Avatar[] = [];
+let lastPhase = game.phase;
 let audio: AudioContext | undefined;
-function chirp(kind: 'paint' | 'found' | 'win' | 'lose' | 'start') {
-  if (!sound) return;
-  try {
-    audio ??= new AudioContext();
-    void audio.resume();
-    const notes = {
-      paint: [620],
-      found: [440, 660],
-      win: [523, 659, 784, 1047],
-      lose: [320, 240],
-      start: [330, 440, 660],
-    }[kind];
-    notes.forEach((hz, i) => {
-      const oscillator = audio!.createOscillator();
-      const gain = audio!.createGain();
-      const when = audio!.currentTime + i * 0.11;
-      oscillator.type = 'sine';
-      oscillator.frequency.value = hz;
-      gain.gain.setValueAtTime(0, when);
-      gain.gain.linearRampToValueAtTime(0.07, when + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.001, when + 0.19);
-      oscillator.connect(gain);
-      gain.connect(audio!.destination);
-      oscillator.start(when);
-      oscillator.stop(when + 0.2);
-    });
-  } catch {
-    /* Gameplay still works without audio. */
-  }
-}
-function renderSound() {
-  $('#sound-button').innerHTML = `${icon(sound ? 'sound' : 'mute')} Sound ${sound ? 'on' : 'off'}`;
-  $('#sound-button').setAttribute('aria-pressed', String(sound));
-}
-renderSound();
-$('#sound-button').onclick = () => {
-  sound = !sound;
-  renderSound();
-  try {
-    localStorage.setItem('color-club-sound', sound ? 'on' : 'off');
-  } catch {}
-  chirp('paint');
-};
 let toastTimer = 0;
+let recoil = 0;
+let lastShot = -Infinity;
+let aimHit: THREE.Intersection | undefined;
+const raycaster = new THREE.Raycaster();
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const neutral = new THREE.Vector2(0, 0);
+
+function active() {
+  return game.phase === 'hiding' || game.phase === 'seeking';
+}
+function frozen() {
+  return paused || help.open || result.open || document.hidden;
+}
+function canPaint() {
+  return chosenRole === 'hider' && !frozen() && !['won', 'lost'].includes(game.phase);
+}
 function toast(message: string) {
   $('#toast').textContent = message;
   $('#toast').classList.add('visible');
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => $('#toast').classList.remove('visible'), 2600);
 }
-const help = $<HTMLDialogElement>('#help-dialog');
-const result = $<HTMLDialogElement>('#result-dialog');
-$('#help-button').onclick = () => {
-  keys.clear();
-  destination = null;
-  help.showModal();
+function chirp(kind: 'paint' | 'tag' | 'win' | 'lose') {
+  if (!sound) return;
+  try {
+    audio ??= new AudioContext();
+    void audio.resume();
+    const notes = { paint: [620], tag: [240, 580], win: [523, 659, 784], lose: [260, 180] }[kind];
+    notes.forEach((hz, i) => {
+      const osc = audio!.createOscillator();
+      const gain = audio!.createGain();
+      const t = audio!.currentTime + i * 0.09;
+      osc.frequency.value = hz;
+      gain.gain.setValueAtTime(0.04, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      osc.connect(gain);
+      gain.connect(audio!.destination);
+      osc.start(t);
+      osc.stop(t + 0.19);
+    });
+  } catch {}
+}
+function updateSound() {
+  $('#sound-button').setAttribute('aria-pressed', String(sound));
+  $('#sound-button').setAttribute('aria-label', sound ? 'Mute sound' : 'Enable sound');
+}
+$('#sound-button').onclick = () => {
+  sound = !sound;
+  updateSound();
+  try {
+    localStorage.setItem('color-club-sound', sound ? 'on' : 'off');
+  } catch {}
+  chirp('paint');
 };
-document
-  .querySelectorAll<HTMLButtonElement>('[data-close]')
-  .forEach(
-    (button) => (button.onclick = () => $<HTMLDialogElement>(`#${button.dataset.close}`).close()),
-  );
-for (const dialog of [help, result])
-  dialog.addEventListener('click', (event) => {
-    if (event.target === dialog) {
-      const rect = dialog.getBoundingClientRect();
-      if (
-        event.clientX < rect.left ||
-        event.clientX > rect.right ||
-        event.clientY < rect.top ||
-        event.clientY > rect.bottom
-      )
-        dialog.close();
-    }
-  });
+updateSound();
+$('#fullscreen').onclick = () => {
+  if (document.fullscreenElement) void document.exitFullscreen();
+  else
+    void stage
+      .requestFullscreen()
+      .catch(() => toast('Fullscreen is unavailable here. You can still play in this window.'));
+};
 
-let scene: THREE.Scene;
-let camera: THREE.OrthographicCamera;
-let renderer: THREE.WebGLRenderer;
-let previewRenderer: THREE.WebGLRenderer;
-let previewScene: THREE.Scene;
-let previewCamera: THREE.PerspectiveCamera;
-let playerAvatar: Avatar;
-let previewAvatar: Avatar;
-const hunterAvatars: Avatar[] = [];
-let targetAvatars: Avatar[] = [];
-const viewCones: THREE.Mesh[] = [];
-const stage = $('#stage');
-let cameraQuarter = 0;
-let cameraAngle = 0.68;
-let desiredCameraAngle = 0.68;
-let zoom = 1;
-let ready = false;
-const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
-let destination: THREE.Vector3 | null = null;
-let moveMarker: THREE.Mesh;
-let moveMarkerLife = 0;
-let world: ReturnType<typeof buildWorld>;
-
-function setupScene() {
-  scene = new THREE.Scene();
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.92;
-  renderer.domElement.setAttribute('aria-label', '3D art room. Move with WASD or click the floor.');
-  renderer.domElement.tabIndex = 0;
-  renderer.domElement.addEventListener('webglcontextlost', (event) => {
-    event.preventDefault();
-    paused = true;
-    toast('The graphics context was interrupted. Reload to restore the room.');
-  });
-  stage.prepend(renderer.domElement);
-  world = buildWorld(scene);
-  camera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 150);
-  playerAvatar = createAvatar(game.player.base);
-  scene.add(playerAvatar.group);
-  for (let i = 0; i < 2; i++) {
-    const avatar = createAvatar('#edb25a');
-    avatar.paint('#edb25a', '#b17035', 'stripes');
-    avatar.group.scale.setScalar(1.05);
-    avatar.group.visible = false;
-    scene.add(avatar.group);
-    hunterAvatars.push(avatar);
-    const cone = new THREE.Mesh(
-      new THREE.CircleGeometry(5.4, 48, (-Math.PI * 80) / 180, (Math.PI * 160) / 180),
-      new THREE.MeshBasicMaterial({
-        color: '#edb25a',
-        transparent: true,
-        opacity: 0.1,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      }),
-    );
-    cone.rotation.x = -Math.PI / 2;
-    cone.position.y = 0.035;
-    scene.add(cone);
-    cone.visible = false;
-    viewCones.push(cone);
-  }
-  moveMarker = new THREE.Mesh(
-    new THREE.RingGeometry(0.19, 0.25, 40),
-    new THREE.MeshBasicMaterial({
-      color: '#f47851',
-      transparent: true,
-      opacity: 0.8,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    }),
-  );
-  moveMarker.rotation.x = -Math.PI / 2;
-  moveMarker.visible = false;
-  scene.add(moveMarker);
-  previewScene = new THREE.Scene();
-  previewScene.add(new THREE.HemisphereLight('#fff8e6', '#75886c', 2.6));
-  const light = new THREE.DirectionalLight('#fff5df', 3.2);
-  light.position.set(3, 5, 4);
-  previewScene.add(light);
-  previewAvatar = createAvatar(game.player.base);
-  previewScene.add(previewAvatar.group);
-  previewAvatar.group.rotation.y = -0.45;
-  previewCamera = new THREE.PerspectiveCamera(31, 1, 0.1, 30);
-  previewCamera.position.set(2.5, 2.1, 4);
-  previewCamera.lookAt(0, 0.73, 0);
-  previewRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  previewRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  previewRenderer.outputColorSpace = THREE.SRGBColorSpace;
-  previewRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-  previewRenderer.toneMappingExposure = 0.92;
-  $('#avatar-preview').append(previewRenderer.domElement);
-  new ResizeObserver(resize).observe(stage);
-  new ResizeObserver(resize).observe($('#avatar-preview'));
-  resize();
-  renderer.domElement.addEventListener('pointerup', clickRoom);
-  ready = true;
-  syncPaint();
-}
-function resize() {
-  if (!renderer || !camera) return;
-  const width = stage.clientWidth;
-  const height = stage.clientHeight;
-  renderer.setSize(width, height, false);
-  const aspect = width / height;
-  const span = aspect < 1.2 ? 19 / aspect : 16.4;
-  camera.left = (-span * aspect) / 2;
-  camera.right = (span * aspect) / 2;
-  camera.top = span / 2;
-  camera.bottom = -span / 2;
-  camera.zoom = zoom;
-  camera.updateProjectionMatrix();
-  if (previewRenderer) {
-    const element = $('#avatar-preview');
-    previewRenderer.setSize(element.clientWidth, element.clientHeight, false);
-    previewCamera.aspect = element.clientWidth / element.clientHeight;
-    previewCamera.updateProjectionMatrix();
+function releaseMouse() {
+  keys.clear();
+  if (document.pointerLockElement) {
+    ignoreUnlock = true;
+    document.exitPointerLock();
   }
 }
-function clickRoom(event: PointerEvent) {
-  if (!ready || isPaused() || ['won', 'lost'].includes(game.phase)) return;
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.set(
-    ((event.clientX - rect.left) / rect.width) * 2 - 1,
-    (-(event.clientY - rect.top) / rect.height) * 2 + 1,
-  );
-  raycaster.setFromCamera(pointer, camera);
-  if (chosenRole === 'seeker') {
-    if (game.phase !== 'seeking') {
-      toast('Start a round to find the hidden chameleons.');
-      return;
-    }
-    scene.updateMatrixWorld(true);
-    const hits = raycaster
-      .intersectObjects(scene.children, true)
-      .filter(
-        (hit) =>
-          hit.object instanceof THREE.Mesh &&
-          hit.object.visible &&
-          hit.object !== moveMarker &&
-          !viewCones.includes(hit.object) &&
-          isVisible(hit.object),
-      );
-    const first = hits[0];
-    let object: THREE.Object3D | null = first?.object || null;
-    let id: number | null = null;
-    while (object) {
-      if (typeof object.userData.targetId === 'number') {
-        id = object.userData.targetId;
-        break;
-      }
-      object = object.parent;
-    }
-    const tagged = game.tag(id);
-    chirp(tagged ? 'found' : 'lose');
-    toast(
-      tagged
-        ? 'Found you! A very suspicious little decoration.'
-        : `Just part of the room. ${Math.max(0, 5 - game.misses)} mistakes left.`,
-    );
+async function enterControls() {
+  if (!ready || !active() || frozen() || paintOpen) return;
+  controlsEntered = true;
+  if (coarse) {
     updateHUD();
-  } else {
-    if (game.phase === 'ready') {
-      toast('Start a round, then click a clear spot to explore.');
-      return;
-    }
-    const hit = raycaster.ray.intersectPlane(
-      new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
-      new THREE.Vector3(),
-    );
-    if (hit && Math.abs(hit.x) < 5.7 && Math.abs(hit.z) < 4.7) {
-      destination = hit;
-      moveMarker.position.set(hit.x, 0.04, hit.z);
-      moveMarkerLife = 1;
-    }
+    return;
   }
+  try {
+    await renderer.domElement.requestPointerLock();
+  } catch (error) {
+    captureUnavailable = true;
+    console.info(
+      'Mouse capture unavailable:',
+      error instanceof Error ? error.message : String(error),
+    );
+    toast('Drag the room to look. Click to tag as seeker.');
+  }
+  updateHUD();
 }
-function isVisible(object: THREE.Object3D): boolean {
-  for (let p: THREE.Object3D | null = object; p; p = p.parent) if (!p.visible) return false;
-  return true;
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === renderer?.domElement) {
+    controlsEntered = true;
+    ignoreUnlock = false;
+    captureUnavailable = false;
+  } else if (ignoreUnlock) ignoreUnlock = false;
+  else if (active() && !paintOpen && !help.open && !result.open) setPaused(true);
+  updateHUD();
+});
+document.addEventListener('pointerlockerror', () => {
+  controlsEntered = true;
+  captureUnavailable = true;
+  toast('Mouse capture unavailable. Drag to look instead.');
+});
+$('#enter-room').onclick = () => void enterControls();
+function setPaused(value: boolean) {
+  if (!active()) return;
+  paused = value;
+  keys.clear();
+  $('#pause-screen').hidden = !value;
+  $('#pause').setAttribute('aria-label', value ? 'Resume game' : 'Pause game');
+  if (value) releaseMouse();
+  updateHUD();
+}
+$('#pause').onclick = () => {
+  if (paused) {
+    setPaused(false);
+    void enterControls();
+  } else setPaused(true);
+};
+$('#resume').onclick = () => {
+  setPaused(false);
+  void enterControls();
+};
+$('#restart').onclick = () => startRound();
+$('#help-button').onclick = () => {
+  releaseMouse();
+  help.showModal();
+  updateHUD();
+};
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-close]'))
+  button.onclick = () => {
+    $<HTMLDialogElement>(`#${button.dataset.close}`).close();
+    updateHUD();
+  };
+help.addEventListener('close', () => updateHUD());
+help.addEventListener('cancel', () => keys.clear());
+result.addEventListener('cancel', (event) => {
+  event.preventDefault();
+  lobby();
+});
+
+function setSelected(button: HTMLButtonElement, selected: boolean) {
+  button.classList.toggle('selected', selected);
+  button.setAttribute('aria-pressed', String(selected));
 }
 function syncPaint() {
   if (ready)
@@ -379,25 +270,21 @@ function syncPaint() {
   $<HTMLInputElement>('#custom-color').value = game.player.base;
   document
     .querySelectorAll<HTMLButtonElement>('[data-color]')
-    .forEach((button) => setSelected(button, button.dataset.color === game.player.base));
+    .forEach((b) => setSelected(b, b.dataset.color === game.player.base));
   document
     .querySelectorAll<HTMLButtonElement>('[data-pattern]')
-    .forEach((button) => setSelected(button, button.dataset.pattern === game.player.pattern));
+    .forEach((b) => setSelected(b, b.dataset.pattern === game.player.pattern));
   document
     .querySelectorAll<HTMLButtonElement>('[data-pose]')
-    .forEach((button) => setSelected(button, button.dataset.pose === game.player.pose));
-}
-function setSelected(button: HTMLButtonElement, selected: boolean) {
-  button.classList.toggle('selected', selected);
-  button.setAttribute('aria-pressed', String(selected));
-}
-function canPaint() {
-  return chosenRole === 'hider' && !isPaused() && !['won', 'lost'].includes(game.phase);
+    .forEach((b) => setSelected(b, b.dataset.pose === game.player.pose));
 }
 function paint(color: string) {
   if (!canPaint()) return;
-  const accent = new THREE.Color(color).multiplyScalar(0.73).getHexString();
-  game.paint(color, `#${accent}`, game.player.pattern);
+  game.paint(
+    color,
+    `#${new THREE.Color(color).multiplyScalar(0.8).getHexString()}`,
+    game.player.pattern,
+  );
   syncPaint();
   chirp('paint');
   updateHUD();
@@ -408,325 +295,533 @@ $('#palette').innerHTML = PALETTE.map(
 ).join('');
 document
   .querySelectorAll<HTMLButtonElement>('[data-color]')
-  .forEach((button) => (button.onclick = () => paint(button.dataset.color!)));
-$<HTMLInputElement>('#custom-color').oninput = (event) =>
-  paint((event.target as HTMLInputElement).value);
+  .forEach((b) => (b.onclick = () => paint(b.dataset.color!)));
+$<HTMLInputElement>('#custom-color').oninput = (e) => paint((e.target as HTMLInputElement).value);
 document.querySelectorAll<HTMLButtonElement>('[data-pattern]').forEach(
-  (button) =>
-    (button.onclick = () => {
+  (b) =>
+    (b.onclick = () => {
       if (!canPaint()) return;
-      game.paint(
-        game.player.base,
-        `#${new THREE.Color(game.player.base).multiplyScalar(0.73).getHexString()}`,
-        button.dataset.pattern as Pattern,
-      );
+      game.paint(game.player.base, game.player.accent, b.dataset.pattern as Pattern);
       syncPaint();
-      chirp('paint');
     }),
 );
 document.querySelectorAll<HTMLButtonElement>('[data-pose]').forEach(
-  (button) =>
-    (button.onclick = () => {
+  (b) =>
+    (b.onclick = () => {
       if (!canPaint()) return;
-      game.setPose(button.dataset.pose as Pose);
+      game.setPose(b.dataset.pose as Pose);
       syncPaint();
-      chirp('paint');
     }),
 );
+function openPaint(value: boolean) {
+  if (chosenRole !== 'hider' || (!canPaint() && value)) return;
+  paintOpen = value;
+  $('#paint-panel').hidden = !value;
+  keys.clear();
+  if (value) releaseMouse();
+  else if (active()) void enterControls();
+  resize();
+  updateHUD();
+}
+$('#paint-button').onclick = () => openPaint(!paintOpen);
+$('#close-paint').onclick = $('#finish-paint').onclick = () => openPaint(false);
+function parentFlag(object: THREE.Object3D, flag: string): unknown {
+  for (let p: THREE.Object3D | null = object; p; p = p.parent)
+    if (p.userData[flag] !== undefined) return p.userData[flag];
+  return undefined;
+}
+function visible(object: THREE.Object3D) {
+  for (let p: THREE.Object3D | null = object; p; p = p.parent) if (!p.visible) return false;
+  return true;
+}
+function castAim(maxDistance = 30) {
+  camera.updateMatrixWorld();
+  scene.updateMatrixWorld();
+  raycaster.setFromCamera(neutral, camera);
+  raycaster.far = maxDistance;
+  return raycaster
+    .intersectObjects(scene.children, true)
+    .find(
+      (hit) =>
+        hit.object instanceof THREE.Mesh &&
+        visible(hit.object) &&
+        !parentFlag(hit.object, 'ignoreAim'),
+    );
+}
 function sample() {
-  if (!canPaint()) return;
-  const color = game.sample();
-  paint(color);
-  toast(`Borrowed a little ${game.environment.name.toLowerCase()}. Looking good.`);
+  if (!canPaint() || !ready) return;
+  const hit = castAim(10);
+  if (!hit) {
+    toast('Aim at a nearby surface to sample its color.');
+    return;
+  }
+  let color = parentFlag(hit.object, 'surfaceColor');
+  if (typeof color !== 'string' && hit.object instanceof THREE.Mesh) {
+    const material = Array.isArray(hit.object.material)
+      ? hit.object.material[0]
+      : hit.object.material;
+    if ('color' in material) color = `#${(material.color as THREE.Color).getHexString()}`;
+  }
+  if (typeof color === 'string') {
+    paint(color);
+    toast('Color sampled. Match your silhouette to the surroundings.');
+  }
 }
 $('#sample').onclick = sample;
 
-function selectRole(role: Role) {
-  if (['hiding', 'seeking'].includes(game.phase)) {
-    toast('Finish this round, or pause to start a new one.');
-    return;
+function clearAvatars(avatars: Avatar[]) {
+  for (const avatar of avatars) {
+    scene.remove(avatar.group);
+    const materials = new Set<THREE.Material>();
+    avatar.group.traverse((object) => {
+      if (object instanceof THREE.Mesh) {
+        for (const material of Array.isArray(object.material) ? object.material : [object.material])
+          materials.add(material);
+      }
+    });
+    // Primitive geometry is shared with the school and other live avatars.
+    for (const m of materials) {
+      (m as THREE.MeshStandardMaterial).map?.dispose();
+      m.dispose();
+    }
   }
+}
+function selectRole(role: Role) {
+  if (active()) return;
   chosenRole = role;
+  stage.dataset.role = role;
+  stage.dataset.camera = role === 'seeker' ? 'first-person' : 'third-person';
   document
-    .querySelectorAll<HTMLButtonElement>('[data-role]')
-    .forEach((button) => setSelected(button, button.dataset.role === role));
-  const hider = role === 'hider';
-  $('#paint-controls').style.display = hider ? '' : 'none';
-  $('#blend-box').style.display = hider ? '' : 'none';
-  $('#seeker-controls').style.display = hider ? 'none' : 'block';
-  $('#avatar-heading').innerHTML = hider
-    ? 'Born to<br><span>blend in.</span>'
-    : 'An eye for<br><span>the unusual.</span>';
-  $('.solo-note').textContent = hider
-    ? 'Just you, a little color & two very curious seekers.'
-    : 'Five hiding chameleons. One very curious you.';
-  $('#start').innerHTML =
-    `${hider ? "Let's play hide & seek" : 'Ready, set, find them'} ${icon('arrow')}`;
-  $('#target-dots').innerHTML = Array.from(
-    { length: 5 },
-    () => `<span class="target-dot">${icon('eye')}</span>`,
-  ).join('');
+    .querySelectorAll<HTMLButtonElement>('button[data-role]')
+    .forEach((b) => setSelected(b, b.dataset.role === role));
+  $('#start').innerHTML = `Enter as ${role} ${icons.arrow}`;
+  $('#role-description').textContent =
+    role === 'hider'
+      ? 'You have a minute to hide. Paint, pose, and stay out of sight while three seekers search the school.'
+      : 'Walk the school in first person. Find eight carefully hidden chameleons in three minutes. Watch the corners. Check behind cover.';
   if (ready) {
-    playerAvatar.group.visible = hider;
-    previewAvatar.paint(
-      hider ? game.player.base : '#edb25a',
-      '#b17035',
-      hider ? game.player.pattern : 'stripes',
-    );
+    playerAvatar.group.visible = role === 'hider';
+    tagger.visible = role === 'seeker';
   }
   updateHUD();
 }
 document
-  .querySelectorAll<HTMLButtonElement>('[data-role]')
-  .forEach((button) => (button.onclick = () => selectRole(button.dataset.role as Role)));
-function clearTargets() {
-  for (const avatar of targetAvatars) {
-    scene.remove(avatar.group);
-    avatar.group.traverse((object) => {
-      if (object instanceof THREE.Mesh) {
-        object.geometry.dispose();
-        const materials = Array.isArray(object.material) ? object.material : [object.material];
-        for (const material of materials) {
-          (material as THREE.MeshStandardMaterial).map?.dispose();
-          material.dispose();
-        }
-      }
-    });
-  }
-  targetAvatars = [];
-}
+  .querySelectorAll<HTMLButtonElement>('button[data-role]')
+  .forEach((b) => (b.onclick = () => selectRole(b.dataset.role as Role)));
 function startRound() {
   if (!ready) return;
   const { base, accent, pattern, pose } = game.player;
   game.start(chosenRole);
-  game.paint(base, accent, pattern);
-  game.setPose(pose);
+  if (chosenRole === 'hider') {
+    game.paint(base, accent, pattern);
+    game.setPose(pose);
+  }
+  yaw = 0;
+  pitch = chosenRole === 'hider' ? -0.13 : 0;
   paused = false;
+  paintOpen = false;
+  controlsEntered = false;
   keys.clear();
-  destination = null;
+  $('#paint-panel').hidden = true;
   $('#pause-screen').hidden = true;
   $('#pause').setAttribute('aria-label', 'Pause game');
   result.close();
-  clearTargets();
+  clearAvatars(targetAvatars);
+  clearAvatars(hunterAvatars);
+  targetAvatars = [];
+  hunterAvatars = [];
   for (const target of game.targets) {
     const avatar = createAvatar(target.base);
     avatar.paint(target.base, target.accent, target.pattern);
     avatar.pose(target.pose);
-    avatar.group.position.set(target.x, 0, target.z);
-    avatar.group.rotation.y = target.id * 1.7;
+    avatar.group.position.set(target.x, target.y, target.z);
+    avatar.group.rotation.y = target.angle;
     avatar.group.userData.targetId = target.id;
     scene.add(avatar.group);
     targetAvatars.push(avatar);
   }
-  playerAvatar.group.visible = chosenRole === 'hider';
+  for (const hunter of game.hunters) {
+    const avatar = createAvatar('#d39b56');
+    avatar.paint('#d39b56', '#433d37', 'solid');
+    avatar.group.position.set(hunter.x, 0, hunter.z);
+    avatar.group.userData.ignoreAim = true;
+    scene.add(avatar.group);
+    hunterAvatars.push(avatar);
+  }
+  lastPhase = game.phase;
   syncPaint();
-  if (chosenRole === 'seeker') previewAvatar.paint('#edb25a', '#b17035', 'stripes');
-  previousPhase = game.phase;
+  updateHUD();
+  chirp('paint');
+  void enterControls();
   $('#a11y-status').textContent =
     chosenRole === 'hider'
-      ? 'Round started. You have 25 seconds to hide.'
-      : 'Round started. Find five chameleons in sixty seconds.';
-  chirp('start');
+      ? 'You have sixty seconds to hide.'
+      : 'Find eight chameleons. First-person controls active.';
+}
+function lobby() {
+  releaseMouse();
+  result.close();
+  help.close();
+  paused = false;
+  paintOpen = false;
+  controlsEntered = false;
+  clearAvatars(targetAvatars);
+  clearAvatars(hunterAvatars);
+  targetAvatars = [];
+  hunterAvatars = [];
+  game = new Game();
+  lastPhase = game.phase;
+  yaw = 0;
+  pitch = -0.13;
+  $('#pause-screen').hidden = true;
+  $('#paint-panel').hidden = true;
+  $('#pause').setAttribute('aria-label', 'Pause game');
+  selectRole(chosenRole);
+  syncPaint();
   updateHUD();
 }
-$('#start').onclick = () => {
-  if (game.phase === 'hiding') {
-    game.beginSeeking();
-    toast('Ready or not, here they come!');
-  } else if (game.phase === 'seeking') {
-    togglePause();
-  } else startRound();
-};
+$('#start').onclick = startRound;
 $('#play-again').onclick = startRound;
+$('#back-lobby').onclick = $('#result-lobby').onclick = lobby;
 $('#switch-role').onclick = () => {
-  result.close();
-  selectRole(chosenRole === 'hider' ? 'seeker' : 'hider');
+  chosenRole = chosenRole === 'hider' ? 'seeker' : 'hider';
+  lobby();
   startRound();
 };
-function togglePause() {
-  if (!['hiding', 'seeking'].includes(game.phase)) return;
-  paused = !paused;
-  keys.clear();
-  destination = null;
-  $('#pause-screen').hidden = !paused;
-  $('#pause').setAttribute('aria-label', paused ? 'Resume game' : 'Pause game');
-}
-$('#pause').onclick = togglePause;
-$('#resume').onclick = togglePause;
-$('#restart').onclick = startRound;
-function rotateCamera() {
-  cameraQuarter = (cameraQuarter + 1) % 4;
-  desiredCameraAngle += Math.PI / 2;
-  if (reducedMotion) cameraAngle = desiredCameraAngle;
-}
-$('#rotate').onclick = rotateCamera;
-$('#zoom-out').onclick = () => {
-  zoom = Math.max(0.75, zoom - 0.15);
-  resize();
+$('#skip').onclick = () => {
+  game.beginSeeking();
+  updateHUD();
+  void enterControls();
 };
-$('#zoom-in').onclick = () => {
-  zoom = Math.min(1.75, zoom + 0.15);
+function shoot() {
+  if (chosenRole !== 'seeker' || game.phase !== 'seeking' || frozen() || !controlsEntered) return;
+  const now = performance.now();
+  if (now - lastShot < 350) return;
+  lastShot = now;
+  recoil = 0.12;
+  const hit = castAim(90);
+  const id = hit ? parentFlag(hit.object, 'targetId') : undefined;
+  const tagged = game.tag(typeof id === 'number' ? id : null);
+  stage.classList.remove('tagged', 'missed');
+  stage.classList.add(tagged ? 'tagged' : 'missed');
+  setTimeout(() => stage.classList.remove('tagged', 'missed'), 220);
+  chirp(tagged ? 'tag' : 'lose');
+  toast(tagged ? `Found one. ${game.found} of ${TARGET_COUNT}.` : game.lastEvent);
+  updateHUD();
+}
+
+function setupScene() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color('#c8d9d4');
+  scene.fog = new THREE.Fog('#c8d9d4', 30, 90);
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.95;
+  renderer.domElement.tabIndex = 0;
+  renderer.domElement.setAttribute(
+    'aria-label',
+    '3D school. WASD to move, mouse to look, Space to jump.',
+  );
+  stage.prepend(renderer.domElement);
+  buildWorld(scene);
+  camera = new THREE.PerspectiveCamera(76, 1, 0.06, 150);
+  scene.add(camera);
+  playerAvatar = createAvatar(game.player.base);
+  playerAvatar.group.userData.ignoreAim = true;
+  scene.add(playerAvatar.group);
+  tagger = new THREE.Group();
+  tagger.userData.ignoreAim = true;
+  const grip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.13, 0.23, 0.14),
+    new THREE.MeshStandardMaterial({ color: '#35423e', roughness: 0.7 }),
+  );
+  grip.position.set(0, -0.1, 0.06);
+  tagger.add(grip);
+  const barrel = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.105, 0.13, 0.42, 16),
+    new THREE.MeshStandardMaterial({ color: '#e8b960', roughness: 0.5 }),
+  );
+  barrel.rotation.x = Math.PI / 2;
+  tagger.add(barrel);
+  const tip = new THREE.Mesh(
+    new THREE.TorusGeometry(0.08, 0.025, 8, 24),
+    new THREE.MeshStandardMaterial({ color: '#f6edd3' }),
+  );
+  tip.position.z = -0.22;
+  tagger.add(tip);
+  tagger.scale.setScalar(0.62);
+  tagger.position.set(0.31, -0.23, -0.75);
+  camera.add(tagger);
+  previewScene = new THREE.Scene();
+  previewScene.add(new THREE.HemisphereLight('#fff4df', '#637b71', 2.5));
+  const light = new THREE.DirectionalLight('#fff0db', 3);
+  light.position.set(2, 4, 3);
+  previewScene.add(light);
+  previewAvatar = createAvatar(game.player.base);
+  previewAvatar.group.rotation.y = -0.4;
+  previewScene.add(previewAvatar.group);
+  previewCamera = new THREE.PerspectiveCamera(35, 1, 0.1, 20);
+  previewCamera.position.set(2, 1.8, 3.3);
+  previewCamera.lookAt(0, 0.7, 0);
+  previewRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  previewRenderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+  previewRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+  previewRenderer.toneMappingExposure = 0.95;
+  $('#avatar-preview').append(previewRenderer.domElement);
+  new ResizeObserver(resize).observe(stage);
+  ready = true;
   resize();
-};
-const keys = new Set<string>();
-const movements = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright']);
-document.addEventListener('keydown', (event) => {
-  const target = event.target as HTMLElement;
-  if (target instanceof HTMLInputElement || help.open || result.open) return;
-  const key = event.key.toLowerCase();
-  if (movements.has(key)) {
+  syncPaint();
+  renderer.domElement.addEventListener('webglcontextlost', (event) => {
     event.preventDefault();
-    if (!isPaused()) {
-      keys.add(key);
-      destination = null;
+    setPaused(true);
+    toast('Graphics were interrupted. Reload to restore the school.');
+  });
+  let drag: { x: number; y: number; distance: number; id: number } | null = null;
+  renderer.domElement.addEventListener('pointerdown', (event) => {
+    if (!active() || frozen() || paintOpen) return;
+    if (document.pointerLockElement === renderer.domElement) {
+      if (event.button === 0) shoot();
+      return;
     }
+    if (!controlsEntered) {
+      void enterControls();
+      return;
+    }
+    drag = { x: event.clientX, y: event.clientY, distance: 0, id: event.pointerId };
+    renderer.domElement.setPointerCapture(event.pointerId);
+  });
+  renderer.domElement.addEventListener('pointermove', (event) => {
+    if (!drag || frozen() || paintOpen) return;
+    const dx = event.clientX - drag.x,
+      dy = event.clientY - drag.y;
+    drag.distance += Math.abs(dx) + Math.abs(dy);
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    look(dx, dy);
+  });
+  renderer.domElement.addEventListener('pointerup', () => {
+    if (drag && drag.distance < 5) shoot();
+    drag = null;
+  });
+  renderer.domElement.addEventListener('pointercancel', () => (drag = null));
+  renderer.domElement.addEventListener('contextmenu', (event) => event.preventDefault());
+  renderer.domElement.addEventListener(
+    'wheel',
+    (event) => {
+      if (chosenRole === 'hider' && active()) {
+        event.preventDefault();
+        thirdPersonDistance = THREE.MathUtils.clamp(
+          thirdPersonDistance + event.deltaY * 0.004,
+          2,
+          5.5,
+        );
+      }
+    },
+    { passive: false },
+  );
+}
+function resize() {
+  if (!renderer || !camera) return;
+  renderer.setSize(stage.clientWidth, stage.clientHeight, false);
+  camera.aspect = stage.clientWidth / stage.clientHeight;
+  camera.updateProjectionMatrix();
+  if (previewRenderer && !$('#paint-panel').hidden) {
+    const el = $('#avatar-preview');
+    previewRenderer.setSize(el.clientWidth, el.clientHeight, false);
+    previewCamera.aspect = el.clientWidth / el.clientHeight;
+    previewCamera.updateProjectionMatrix();
+  }
+}
+function look(dx: number, dy: number) {
+  yaw += dx * 0.0023;
+  pitch = THREE.MathUtils.clamp(pitch - dy * 0.0023, -1.22, 1.22);
+}
+document.addEventListener('mousemove', (event) => {
+  if (document.pointerLockElement === renderer?.domElement && !frozen() && !paintOpen)
+    look(event.movementX, event.movementY);
+});
+const movementKeys = new Set([
+  'w',
+  'a',
+  's',
+  'd',
+  'arrowup',
+  'arrowdown',
+  'arrowleft',
+  'arrowright',
+]);
+document.addEventListener('keydown', (event) => {
+  if (event.target instanceof HTMLInputElement || help.open || result.open) return;
+  const key = event.key.toLowerCase();
+  if (key === 'escape') {
+    event.preventDefault();
+    if (active()) setPaused(!paused);
+    return;
+  }
+  if (frozen()) return;
+  if (movementKeys.has(key)) {
+    event.preventDefault();
+    if (!paintOpen) keys.add(key);
   }
   if (event.repeat) return;
+  if (key === 'f') {
+    event.preventDefault();
+    openPaint(!paintOpen);
+  }
   if (key === 'e') sample();
   if (key === 'r' && canPaint()) {
     const poses: Pose[] = ['stand', 'crouch', 'flat'];
     game.setPose(poses[(poses.indexOf(game.player.pose) + 1) % 3]);
     syncPaint();
   }
-  if (key === 'q') rotateCamera();
-  if (key === 'escape') {
+  if ((key === 'c' || key === 'control') && active() && !paintOpen) {
     event.preventDefault();
-    togglePause();
+    game.setPose(game.player.pose === 'crouch' ? 'stand' : 'crouch');
+    syncPaint();
+  }
+  if (key === ' ' && active() && !paintOpen) {
+    event.preventDefault();
+    game.jump();
   }
 });
 document.addEventListener('keyup', (event) => keys.delete(event.key.toLowerCase()));
 window.addEventListener('blur', () => {
   keys.clear();
-  destination = null;
-  if (['hiding', 'seeking'].includes(game.phase) && !paused) togglePause();
+  if (active()) setPaused(true);
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    keys.clear();
-    destination = null;
-    if (['hiding', 'seeking'].includes(game.phase) && !paused) togglePause();
-  }
+  if (document.hidden && active()) setPaused(true);
 });
 document.querySelectorAll<HTMLButtonElement>('[data-move]').forEach((button) => {
-  const key = { up: 'w', left: 'a', down: 's', right: 'd' }[button.dataset.move!]!;
+  const key = ({ up: 'w', left: 'a', down: 's', right: 'd' } as Record<string, string>)[
+    button.dataset.move!
+  ];
   button.onpointerdown = (event) => {
+    if (frozen() || paintOpen) return;
     event.preventDefault();
-    if (isPaused()) return;
+    controlsEntered = true;
     button.setPointerCapture(event.pointerId);
     keys.add(key);
-    destination = null;
   };
-  button.onpointerup = button.onpointercancel = () => {
-    keys.delete(key);
-  };
-  button.onlostpointercapture = () => keys.delete(key);
+  button.onpointerup =
+    button.onpointercancel =
+    button.onlostpointercapture =
+      () => {
+        keys.delete(key);
+      };
 });
-if (matchMedia('(pointer: coarse)').matches) {
-  $('.touch-controls').classList.add('enabled');
-  stage.classList.add('touch-active');
-}
-function isPaused() {
-  return paused || help.open || result.open || document.hidden;
-}
-let previousPhase = game.phase;
-let displayedSecond = -1;
+$('#touch-jump').onclick = () => game.jump();
+$('#touch-tag').onclick = shoot;
+
 function updateHUD() {
-  const active = ['hiding', 'seeking'].includes(game.phase);
+  const playing = active();
   stage.dataset.phase = game.phase;
-  const second = Math.ceil(game.timeLeft);
-  if (active) {
-    if (second !== displayedSecond || !$('#timer').classList.contains('running')) {
-      $('#timer').innerHTML =
-        `${icon(game.phase === 'hiding' ? 'hide' : 'eye')} ${String(Math.floor(second / 60)).padStart(2, '0')}:${String(second % 60).padStart(2, '0')}`;
-      displayedSecond = second;
-    }
-  } else
-    $('#timer').innerHTML = '<span class="live-dot"></span> A little room, endless possibilities';
-  $('#timer').classList.toggle('running', active);
-  const banner =
+  stage.dataset.role = chosenRole;
+  stage.dataset.camera = chosenRole === 'hider' ? 'third-person' : 'first-person';
+  $('#lobby').hidden = game.phase !== 'ready';
+  $('#play-hud').hidden = !playing;
+  $('#crosshair').hidden = !playing || paused;
+  $('.hud').hidden = !playing;
+  $('#zone').textContent =
+    ZONES.find(
+      (zone) =>
+        game.player.x >= zone.minX &&
+        game.player.x <= zone.maxX &&
+        game.player.z >= zone.minZ &&
+        game.player.z <= zone.maxZ,
+    )?.name || 'Central passage';
+  $('#coordinates').textContent =
+    `${game.player.x.toFixed(1)} / ${game.player.z.toFixed(1)} · ${game.player.y.toFixed(1)} m`;
+  const seconds = Math.ceil(game.timeLeft);
+  $('#timer').textContent = playing
+    ? `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+    : 'EXPLORE & DISAPPEAR';
+  $('#phase-label').textContent =
     game.phase === 'hiding'
-      ? 'A little alone time. Find a spot & get painting.'
-      : game.phase === 'seeking'
-        ? chosenRole === 'hider'
-          ? `Seekers are looking · ${Math.round(game.suspicion)}% noticed`
-          : `A good eye sees everything · ${game.found} / 5 found`
-        : '';
-  $('#round-banner').textContent = banner;
-  $('#round-banner').style.background =
-    game.suspicion > 55 && chosenRole === 'hider' ? '#c66c4e' : '';
-  const blend = Math.round(game.camouflage);
-  $('#blend-value').textContent = `${blend}%`;
-  $('#blend-fill').style.width = `${blend}%`;
+      ? 'FIND YOUR HIDING PLACE'
+      : playing
+        ? 'THE SEARCH IS ON'
+        : 'THE OLD ART SCHOOL';
+  $('#camera-label').textContent =
+    chosenRole === 'hider' ? 'THIRD-PERSON HIDER' : 'FIRST-PERSON SEEKER';
+  $('#view-chip').textContent = chosenRole === 'hider' ? 'THIRD PERSON' : 'FIRST PERSON';
+  $('#objective-label').textContent = chosenRole === 'hider' ? 'CAMOUFLAGE' : 'TARGETS FOUND';
+  $('#objective-value').textContent =
+    chosenRole === 'hider' ? `${Math.round(game.camouflage)}%` : `${game.found} / ${TARGET_COUNT}`;
+  $('#objective-detail').textContent =
+    chosenRole === 'hider'
+      ? game.environment.name
+      : `${MAX_MISSES - game.misses} mistakes remaining`;
+  $('#found-count').textContent = `${game.found} / ${TARGET_COUNT}`;
+  $('#miss-count').textContent = `${Math.max(0, MAX_MISSES - game.misses)} / ${MAX_MISSES}`;
+  $('#seeker-count').hidden = chosenRole !== 'seeker';
+  $('#paint-button').hidden = chosenRole !== 'hider';
+  $('#skip').hidden = game.phase !== 'hiding';
+  $('#exposure').hidden = chosenRole !== 'hider' || game.phase !== 'seeking';
+  $('#suspicion').textContent = `${Math.round(game.suspicion)}%`;
+  $('#suspicion-fill').style.width = `${game.suspicion}%`;
+  $('#round-banner').textContent =
+    game.phase === 'hiding'
+      ? 'Find cover. Match the surface. Lose the silhouette.'
+      : chosenRole === 'hider'
+        ? 'They are looking. Stay still. Stay out of sight.'
+        : 'Eight chameleons. Six rooms. Trust your eyes.';
+  $('#enter-room').textContent = captureUnavailable
+    ? 'Drag to look · retry mouse capture'
+    : 'Click to capture mouse';
+  $('#enter-room').hidden =
+    coarse || document.pointerLockElement === renderer?.domElement || paintOpen || paused;
+  $('#control-hint').textContent =
+    chosenRole === 'hider'
+      ? 'WASD move · Mouse look · Space jump · E sample · F paint · Esc pause'
+      : 'WASD move · Mouse look · Left-click tag · Space jump · C crouch · Esc pause';
+  $('#blend-value').textContent = `${Math.round(game.camouflage)}%`;
+  $('#blend-fill').style.width = `${game.camouflage}%`;
   $('#blend-caption').textContent =
-    `${game.environment.name} · ${blend >= 80 ? 'You look right at home. Now stay still.' : 'Match the color. Get low. Stay still.'}`;
-  $('#found-count').textContent = `${game.found} / 5`;
-  $('#miss-count').textContent = `${Math.max(0, 5 - game.misses)} / 5`;
-  document.querySelectorAll('.target-dot').forEach((dot, i) => {
-    dot.classList.toggle('found', i < game.found);
-    dot.innerHTML = icon(i < game.found ? 'check' : 'eye');
-  });
-  const text =
-    game.phase === 'hiding'
-      ? 'Ready or not, here they come'
-      : game.phase === 'seeking'
-        ? 'Take a little breather'
-        : chosenRole === 'hider'
-          ? "Let's play hide & seek"
-          : 'Ready, set, find them';
-  const markup = `${text} ${icon(game.phase === 'seeking' ? 'pause' : 'arrow')}`;
-  if ($('#start').innerHTML !== markup) $('#start').innerHTML = markup;
-  document
-    .querySelectorAll<HTMLButtonElement>('[data-role]')
-    .forEach((button) => (button.disabled = active));
+    `${game.environment.name}. Cover and pose matter as much as color.`;
   document
     .querySelectorAll<HTMLButtonElement | HTMLInputElement>(
-      '#paint-controls button, #paint-controls input',
+      '#paint-panel button:not(#close-paint):not(#finish-paint),#paint-panel input',
     )
     .forEach((control) => (control.disabled = !canPaint()));
-  $('#hint-label').textContent = active
-    ? chosenRole === 'hider'
-      ? game.phase === 'hiding'
-        ? 'YOUR MOMENT TO DISAPPEAR'
-        : 'NOTHING TO SEE HERE'
-      : 'TRUST YOUR EYES'
-    : 'WELCOME TO THE COLOR CLUB';
-  $('#stage-hint').innerHTML = active
-    ? chosenRole === 'hider'
-      ? 'Match your surroundings.<br><strong>A low pose makes all the difference.</strong>'
-      : 'Look for eyes and curly tails.<br><strong>Click a chameleon to tag it.</strong>'
-    : 'Make yourself at home.<br>Then make yourself <strong>disappear.</strong>';
+  $('.touch-controls').hidden = !coarse || !playing || paintOpen || paused;
+  $('.touch-actions').hidden = !coarse || !playing || paintOpen || paused;
+  $('#touch-tag').hidden = chosenRole !== 'seeker';
 }
 function showResult() {
+  releaseMouse();
+  paintOpen = false;
+  $('#paint-panel').hidden = true;
   const won = game.phase === 'won';
-  const roundScore = Math.max(0, Math.round(game.score));
-  best = Math.max(best, roundScore);
+  const score = Math.max(0, Math.round(game.score));
+  best = Math.max(best, score);
   try {
     localStorage.setItem('color-club-best', String(best));
   } catch {}
-  $('#result-stamp').textContent = won ? '✦' : '◌';
-  $('#result-stamp').style.color = won ? '#83a26f' : '#ee714d';
   $('#result-eyebrow').textContent = won
-    ? 'A very good day to be a chameleon'
-    : 'Even a masterpiece takes practice';
+    ? 'A VERY GOOD DAY TO BE A CHAMELEON'
+    : 'A LITTLE MORE PRACTICE';
   $('#result-title').textContent = won
     ? chosenRole === 'hider'
       ? 'What chameleon?'
-      : 'Nothing gets past you.'
+      : 'An eye for everything.'
     : chosenRole === 'hider'
       ? 'Oh, there you are.'
-      : 'A few sneaky little secrets.';
+      : 'Some secrets stayed hidden.';
   $('#result-description').textContent = won
     ? chosenRole === 'hider'
-      ? 'You became part of the room. The seekers walked on by, and your vanishing act was a success.'
-      : 'Five chameleons found. The room is just a room again. For now.'
+      ? 'You stayed hidden through the search. The school has a new masterpiece.'
+      : 'All eight found. Every room searched. Nothing gets past you.'
     : chosenRole === 'hider'
-      ? 'The seekers spotted you! Try matching the nearest surface with E, flattening with R, and holding still.'
-      : `You found ${game.found} of 5 chameleons. ${game.misses >= 5 ? 'Five mistakes ended the hunt.' : 'Time slipped away.'} Rotate the room to check behind the furniture.`;
-  $('#round-score').textContent = String(roundScore);
+      ? 'The seekers spotted you. Break their line of sight, match your surroundings, and get low.'
+      : `You found ${game.found} of ${TARGET_COUNT}. ${game.misses >= MAX_MISSES ? 'Too many missed tags ended the round.' : 'Time ran out.'} Explore the other rooms and inspect cover from more than one angle.`;
+  $('#round-score').textContent = String(score);
   $('#best-score').textContent = String(best);
-  $('#switch-role').textContent = chosenRole === 'hider' ? 'Try seeking' : 'Try hiding';
-  keys.clear();
-  destination = null;
   result.showModal();
   chirp(won ? 'win' : 'lose');
 }
@@ -735,93 +830,68 @@ let hudTime = 0;
 function frame(now: number) {
   requestAnimationFrame(frame);
   if (!ready) return;
-  const elapsed = (now - previousTime) / 1000;
-  const dt = Math.min(elapsed, 0.1);
+  const elapsed = Math.min((now - previousTime) / 1000, 1);
   previousTime = now;
+  const dt = Math.min(elapsed, 0.08);
   let moving = false;
-  if (!isPaused()) {
-    if (chosenRole === 'hider' && !['won', 'lost'].includes(game.phase)) {
-      let dx =
+  if (!frozen()) {
+    if (active() && !paintOpen && controlsEntered) {
+      const strafe =
         (keys.has('d') || keys.has('arrowright') ? 1 : 0) -
         (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
-      let dz =
-        (keys.has('s') || keys.has('arrowdown') ? 1 : 0) -
-        (keys.has('w') || keys.has('arrowup') ? 1 : 0);
-      if (dx || dz) {
-        const c = Math.cos(cameraAngle),
-          s = Math.sin(cameraAngle);
-        const x = dx * c + dz * s;
-        dz = -dx * s + dz * c;
-        dx = x;
-      } else if (destination) {
-        dx = destination.x - game.player.x;
-        dz = destination.z - game.player.z;
-        const distance = Math.hypot(dx, dz);
-        if (distance < 0.13) {
-          destination = null;
-          dx = 0;
-          dz = 0;
-        } else {
-          dx /= distance;
-          dz /= distance;
-        }
-      }
-      if (dx || dz) {
-        const beforeX = game.player.x,
-          beforeZ = game.player.z;
-        game.move(dx, dz, dt);
-        moving = Math.hypot(game.player.x - beforeX, game.player.z - beforeZ) > 0.001;
-        if (!moving && destination) {
-          destination = null;
-          toast('A little furniture in the way. Try going around.');
-        }
-      }
+      const forward =
+        (keys.has('w') || keys.has('arrowup') ? 1 : 0) -
+        (keys.has('s') || keys.has('arrowdown') ? 1 : 0);
+      const direction = movementDirection(yaw, strafe, forward);
+      const oldX = game.player.x,
+        oldZ = game.player.z;
+      game.move(direction.x, direction.z, elapsed);
+      moving = Math.hypot(game.player.x - oldX, game.player.z - oldZ) > 0.001;
     }
     game.tick(elapsed);
-    if (game.phase !== previousPhase) {
-      if (game.phase === 'seeking') {
-        chirp('start');
-        $('#a11y-status').textContent = 'Seekers are now searching. Stay still!';
-      }
+    if (game.phase !== lastPhase) {
+      if (game.phase === 'seeking' && chosenRole === 'hider')
+        toast('The seekers have entered the school.');
       if (game.phase === 'won' || game.phase === 'lost') showResult();
-      previousPhase = game.phase;
+      lastPhase = game.phase;
     }
   }
-  playerAvatar.group.position.set(game.player.x, 0, game.player.z);
+  playerAvatar.group.position.set(game.player.x, game.player.y, game.player.z);
   playerAvatar.group.rotation.y = game.player.angle;
-  playerAvatar.animate(now / 1000, moving && !isPaused());
-  previewAvatar.animate(reducedMotion ? 0 : now / 1000, false);
+  playerAvatar.animate(reducedMotion ? 0 : now / 1000, moving);
+  const view = cameraView(game.player, chosenRole, yaw, pitch, thirdPersonDistance, OBSTACLES);
+  camera.position.set(view.position.x, view.position.y, view.position.z);
+  camera.lookAt(view.target.x, view.target.y, view.target.z);
+  playerAvatar.group.visible = chosenRole === 'hider' && view.distance > 0.6;
+  tagger.visible = chosenRole === 'seeker' && active();
+  recoil = Math.max(0, recoil - dt * 0.8);
+  tagger.position.z = -0.75 + recoil;
+  tagger.rotation.x = recoil * 0.8;
   for (let i = 0; i < hunterAvatars.length; i++) {
     const hunter = game.hunters[i];
     const avatar = hunterAvatars[i];
-    const visible =
-      chosenRole === 'hider' && ['seeking', 'won', 'lost'].includes(game.phase) && !!hunter;
-    avatar.group.visible = visible;
-    viewCones[i].visible = visible;
-    if (hunter) {
-      avatar.group.position.set(hunter.x, 0, hunter.z);
-      avatar.group.rotation.y = hunter.angle;
-      avatar.animate(now / 1000, !isPaused() && game.phase === 'seeking');
-      viewCones[i].position.set(hunter.x, 0.035, hunter.z);
-      viewCones[i].rotation.z = hunter.angle - Math.PI / 2;
-    }
+    avatar.group.visible = chosenRole === 'hider' && game.phase !== 'hiding';
+    avatar.group.position.set(hunter.x, 0, hunter.z);
+    avatar.group.rotation.y = hunter.angle;
+    avatar.animate(reducedMotion ? 0 : now / 1000, !frozen() && game.phase === 'seeking');
   }
   for (let i = 0; i < targetAvatars.length; i++) {
     targetAvatars[i].group.visible = !game.targets[i].found;
-    targetAvatars[i].animate(reducedMotion ? 0 : now / 1000, false);
+    targetAvatars[i].animate(0, false);
   }
-  moveMarkerLife = Math.max(0, moveMarkerLife - dt);
-  moveMarker.visible = moveMarkerLife > 0;
-  (moveMarker.material as THREE.MeshBasicMaterial).opacity = moveMarkerLife * 0.8;
-  cameraAngle += (desiredCameraAngle - cameraAngle) * Math.min(1, dt * 7);
-  camera.position.set(Math.sin(cameraAngle) * 19, 17, Math.cos(cameraAngle) * 19);
-  camera.lookAt(0, 1.05, 0);
-  world.updateView(camera.position);
   renderer.render(scene, camera);
-  previewRenderer.render(previewScene, previewCamera);
+  if (paintOpen) {
+    previewAvatar.animate(reducedMotion ? 0 : now / 1000, false);
+    previewRenderer.render(previewScene, previewCamera);
+  }
   hudTime += dt;
-  if (hudTime > 0.15) {
+  if (hudTime > 0.12) {
     updateHUD();
+    if (active() && chosenRole === 'hider' && !frozen()) {
+      aimHit = castAim(10);
+      const surface = aimHit ? parentFlag(aimHit.object, 'surfaceName') : null;
+      $('#aim-label').textContent = typeof surface === 'string' ? `${surface} · E to sample` : '';
+    } else $('#aim-label').textContent = '';
     hudTime = 0;
   }
 }
@@ -833,8 +903,8 @@ try {
 } catch (error) {
   console.error(error);
   stage.insertAdjacentHTML(
-    'afterbegin',
-    '<div class="fatal" role="alert"><h2>The art room needs WebGL.</h2><p>Enable graphics acceleration in your browser and reload to bring this little world to life.</p></div>',
+    'beforeend',
+    '<section class="fatal" role="alert"><h2>The school needs WebGL.</h2><p>Enable graphics acceleration and reload to enter the room.</p></section>',
   );
   $<HTMLButtonElement>('#start').disabled = true;
 }
