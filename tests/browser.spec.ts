@@ -10,6 +10,7 @@ async function observeCapture(page: Page, mode: 'native' | 'denied' | 'controlle
     state.testCaptureOutcome = 'released';
     const nativeRequest = Element.prototype.requestPointerLock;
     let controlledElement: Element | null = null;
+    let cursor = { x: 0, y: 0 };
     if (mode === 'controlled') {
       // This fixture tests the game's captured-input contract, not browser permission support.
       Object.defineProperty(document, 'pointerLockElement', {
@@ -20,6 +21,9 @@ async function observeCapture(page: Page, mode: 'native' | 'denied' | 'controlle
         controlledElement = null;
         setTimeout(() => document.dispatchEvent(new Event('pointerlockchange')), 0);
       };
+      document.addEventListener('mousemove', (event) => {
+        if (!document.pointerLockElement) cursor = { x: event.clientX, y: event.clientY };
+      });
     }
     document.addEventListener('pointerlockchange', () => {
       state.testCaptureOutcome = document.pointerLockElement ? 'captured' : 'released';
@@ -40,6 +44,15 @@ async function observeCapture(page: Page, mode: 'native' | 'denied' | 'controlle
           setTimeout(() => {
             controlledElement = this;
             document.dispatchEvent(new Event('pointerlockchange'));
+            // Model the Linux headless pointer reset inferred from the CI trace:
+            // a cursor at (720, 525) produced exactly the heading of (-720, -525).
+            this.dispatchEvent(
+              new MouseEvent('mousemove', {
+                movementX: -cursor.x,
+                movementY: -cursor.y,
+                bubbles: true,
+              }),
+            );
             resolve();
           }, 0);
         });
@@ -59,10 +72,9 @@ async function observeCapture(page: Page, mode: 'native' | 'denied' | 'controlle
 }
 
 async function captureWithKeyboard(page: Page, selector: string) {
-  // Absolute automation mouse moves must finish before capture starts. Under native
-  // pointer lock they can otherwise become unintended relative camera movement.
-  const viewport = page.viewportSize()!;
-  await page.mouse.move(viewport.width / 2, viewport.height / 2);
+  // Linux headless Chromium resets its pointer to the origin when capture begins.
+  // Start there so that reset cannot become an unintended relative camera turn.
+  await page.mouse.move(0, 0);
   await page.locator(selector).press('Enter');
   if (await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) return false;
   await expect
@@ -91,6 +103,8 @@ async function expectViewChanged(
   await expect
     .poll(async () => before.equals(await page.screenshot({ clip })), {
       message: 'Mouse look should visibly turn the 3D camera',
+      // Software-rendered CI screenshots take 11–13 seconds per capture.
+      timeout: 30_000,
     })
     .toBe(false);
 }
