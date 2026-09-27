@@ -13,6 +13,9 @@ export default defineConfig({
     browserName: 'chromium',
     headless: true,
     viewport: { width: 1440, height: 1050 },
+    // SwiftShader runs on the CPU in CI. Keep the layout viewport while rendering
+    // one quarter of the pixels so visual input checks finish within their budget.
+    deviceScaleFactor: 0.5,
     launchOptions: {
       args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
     },
