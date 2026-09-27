@@ -1,6 +1,99 @@
 import { test, expect, type Page } from '@playwright/test';
 
 const pageErrors = new WeakMap<Page, string[]>();
+type CaptureOutcome = 'pending' | 'captured' | 'denied' | 'released';
+type CaptureWindow = Window & { testCaptureOutcome?: CaptureOutcome };
+
+async function observeCapture(page: Page, mode: 'native' | 'denied' | 'controlled' = 'native') {
+  await page.evaluate((mode) => {
+    const state = window as CaptureWindow;
+    state.testCaptureOutcome = 'released';
+    const nativeRequest = Element.prototype.requestPointerLock;
+    let controlledElement: Element | null = null;
+    if (mode === 'controlled') {
+      // This fixture tests the game's captured-input contract, not browser permission support.
+      Object.defineProperty(document, 'pointerLockElement', {
+        configurable: true,
+        get: () => controlledElement,
+      });
+      document.exitPointerLock = () => {
+        controlledElement = null;
+        setTimeout(() => document.dispatchEvent(new Event('pointerlockchange')), 0);
+      };
+    }
+    document.addEventListener('pointerlockchange', () => {
+      state.testCaptureOutcome = document.pointerLockElement ? 'captured' : 'released';
+    });
+    document.addEventListener('pointerlockerror', () => {
+      state.testCaptureOutcome = 'denied';
+    });
+    Element.prototype.requestPointerLock = function () {
+      state.testCaptureOutcome = 'pending';
+      if (mode === 'denied') {
+        queueMicrotask(() => document.dispatchEvent(new Event('pointerlockerror')));
+        return Promise.reject(
+          new DOMException('Capture denied by test fixture', 'NotAllowedError'),
+        );
+      }
+      if (mode === 'controlled') {
+        return new Promise<void>((resolve) => {
+          setTimeout(() => {
+            controlledElement = this;
+            document.dispatchEvent(new Event('pointerlockchange'));
+            resolve();
+          }, 0);
+        });
+      }
+      try {
+        const request = nativeRequest.call(this);
+        return request?.catch((error: unknown) => {
+          state.testCaptureOutcome = 'denied';
+          throw error;
+        });
+      } catch (error) {
+        state.testCaptureOutcome = 'denied';
+        throw error;
+      }
+    };
+  }, mode);
+}
+
+async function captureWithKeyboard(page: Page, selector: string) {
+  // Absolute automation mouse moves must finish before capture starts. Under native
+  // pointer lock they can otherwise become unintended relative camera movement.
+  const viewport = page.viewportSize()!;
+  await page.mouse.move(viewport.width / 2, viewport.height / 2);
+  await page.locator(selector).press('Enter');
+  if (await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) return false;
+  await expect
+    .poll(() => page.evaluate(() => (window as CaptureWindow).testCaptureOutcome))
+    .toMatch(/^(captured|denied)$/);
+  const captured = await page.evaluate(() => document.pointerLockElement?.tagName === 'CANVAS');
+  if (!captured) await expect(page.locator('#enter-room')).toContainText('Drag to look');
+  return captured;
+}
+
+async function relativeLook(page: Page, movementX: number, movementY = 0) {
+  // Playwright mouse.move supplies absolute CDP coordinates, not relative deltas.
+  // Dispatch explicit deltas to exercise the real captured-input event handler.
+  await page.locator('#stage > canvas').dispatchEvent('mousemove', {
+    movementX,
+    movementY,
+    bubbles: true,
+  });
+}
+
+async function expectViewChanged(
+  page: Page,
+  before: Buffer,
+  clip = { x: 440, y: 250, width: 560, height: 400 },
+) {
+  await expect
+    .poll(async () => before.equals(await page.screenshot({ clip })), {
+      message: 'Mouse look should visibly turn the 3D camera',
+    })
+    .toBe(false);
+}
 
 async function coordinates(page: Page) {
   const text = await page.locator('#coordinates').innerText();
@@ -12,12 +105,13 @@ async function start(page: Page, role: 'hider' | 'seeker') {
   await page.locator(`button[data-role="${role}"]`).click();
   await expect(page.locator(`button[data-role="${role}"]`)).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#start')).toContainText(`Enter as ${role}`);
-  await page.locator('#start').click();
+  const captured = await captureWithKeyboard(page, '#start');
   await expect(page.locator('#lobby')).not.toBeVisible();
   await expect(page.locator('#stage')).toHaveAttribute(
     'data-phase',
     role === 'hider' ? 'hiding' : 'seeking',
   );
+  return captured;
 }
 
 async function moveNorth(page: Page) {
@@ -30,7 +124,30 @@ async function moveNorth(page: Page) {
   } finally {
     await page.keyboard.up('w');
   }
-  return { before, after: await coordinates(page) };
+  const after = await coordinates(page);
+  expect(
+    Math.abs(after.x - before.x),
+    'Forward movement must preserve a north-facing heading',
+  ).toBeLessThan(0.2);
+  return { before, after };
+}
+
+async function moveEast(page: Page) {
+  const before = await coordinates(page);
+  await page.keyboard.down('w');
+  try {
+    await expect
+      .poll(async () => (await coordinates(page)).x, { timeout: 10_000 })
+      .toBeGreaterThan(before.x + 0.5);
+  } finally {
+    await page.keyboard.up('w');
+  }
+  const after = await coordinates(page);
+  expect(
+    Math.abs(after.z - before.z),
+    'Forward movement must follow the turned camera heading',
+  ).toBeLessThan(0.2);
+  return { before, after };
 }
 
 async function openHelp(page: Page) {
@@ -49,6 +166,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#stage > canvas')).toBeVisible();
   await expect(page.locator('#start')).toBeEnabled();
+  await observeCapture(page);
 });
 
 test.afterEach(async ({ page }) => {
@@ -110,7 +228,7 @@ test('opens paint with F and preserves custom paint, pattern, and pose when ente
   await expect(page.locator('#timer')).not.toHaveText(time, { timeout: 5000 });
 });
 
-test('seeker walks in first person and looks with mouse capture or the supported drag fallback', async ({
+test('native capture smoke: seeker walks in first person and looks with native capture or its supported fallback', async ({
   page,
 }) => {
   const captureMessages: string[] = [];
@@ -118,11 +236,11 @@ test('seeker walks in first person and looks with mouse capture or the supported
     if (message.text().startsWith('Mouse capture unavailable:'))
       captureMessages.push(message.text());
   });
-  await start(page, 'seeker');
+  const captured = await start(page, 'seeker');
+  console.info(`Native pointer capture: ${captured ? 'captured' : 'denied; using drag fallback'}`);
   await expect(page.locator('#stage')).toHaveAttribute('data-camera', 'first-person');
   await expect(page.locator('#camera-label')).toHaveText('FIRST-PERSON SEEKER');
   await expect(page.locator('#crosshair')).toBeVisible();
-  const captured = await page.evaluate(() => document.pointerLockElement?.tagName === 'CANVAS');
   if (!captured) {
     await expect(page.locator('#enter-room')).toContainText('Drag to look');
     console.info(captureMessages.join('\n'));
@@ -132,12 +250,14 @@ test('seeker walks in first person and looks with mouse capture or the supported
   expect(movement.after.z).toBeLessThan(movement.before.z - 0.5);
   const crop = { x: 440, y: 250, width: 560, height: 400 };
   const beforeLook = await page.screenshot({ clip: crop });
-  await page.mouse.move(1040, 500);
-  if (!captured) await page.mouse.down();
-  await page.mouse.move(740, 440, { steps: 8 });
-  if (!captured) await page.mouse.up();
-  const afterLook = await page.screenshot({ clip: crop });
-  expect(beforeLook.equals(afterLook), 'Mouse look should visibly turn the 3D camera').toBe(false);
+  if (captured) await relativeLook(page, -300, -60);
+  else {
+    await page.mouse.move(1040, 500);
+    await page.mouse.down();
+    await page.mouse.move(740, 440, { steps: 8 });
+    await page.mouse.up();
+  }
+  await expectViewChanged(page, beforeLook, crop);
   await page.screenshot({ path: 'test-results/seeker-first-person.png' });
 });
 
@@ -156,11 +276,53 @@ test('Escape pauses movement and time, then resume returns control to the seeker
   await page.keyboard.up('w');
   await expect(page.locator('#coordinates')).toHaveText(position);
   await expect(page.locator('#timer')).toHaveText(time);
-  await page.locator('#resume').click();
+  await captureWithKeyboard(page, '#resume');
   await expect(page.locator('#pause-screen')).not.toBeVisible();
   await expect(page.locator('#pause')).toHaveAttribute('aria-label', 'Pause game');
   await moveNorth(page);
   await expect(page.locator('#timer')).not.toHaveText(time, { timeout: 5000 });
+});
+
+test('denied capture uses actual mouse dragging to turn the camera without firing a tag', async ({
+  page,
+}) => {
+  await observeCapture(page, 'denied');
+  expect(await start(page, 'seeker')).toBe(false);
+  await moveNorth(page);
+  const beforeLook = await page.screenshot({ clip: { x: 440, y: 250, width: 560, height: 400 } });
+  await page.mouse.move(350, 500);
+  await page.mouse.down();
+  await page.mouse.move(1033, 500, { steps: 12 });
+  await page.mouse.up();
+  await expectViewChanged(page, beforeLook);
+  await expect(page.locator('#miss-count')).toHaveText('8 / 8');
+  await moveEast(page);
+});
+
+test('controlled successful-capture API shim: relative look turns WASD and release/resume preserves heading', async ({
+  page,
+}) => {
+  await observeCapture(page, 'controlled');
+  expect(await start(page, 'seeker')).toBe(true);
+  await moveNorth(page);
+  const beforeLook = await page.screenshot({ clip: { x: 440, y: 250, width: 560, height: 400 } });
+  await relativeLook(page, 683);
+  await expectViewChanged(page, beforeLook);
+  await moveEast(page);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#pause-screen')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.pointerLockElement)).toBeNull();
+  const position = await page.locator('#coordinates').innerText();
+  const time = await page.locator('#timer').innerText();
+  await relativeLook(page, 683);
+  await page.keyboard.down('w');
+  await page.waitForTimeout(1250);
+  await page.keyboard.up('w');
+  await expect(page.locator('#coordinates')).toHaveText(position);
+  await expect(page.locator('#timer')).toHaveText(time);
+  expect(await captureWithKeyboard(page, '#resume')).toBe(true);
+  await expect(page.locator('#pause-screen')).not.toBeVisible();
+  await moveEast(page);
 });
 
 test('instructions freeze an active round and closing them allows movement again', async ({
@@ -204,7 +366,7 @@ test('HUD clicks do not fire tags and clicking the room fires along the crosshai
   await expect(page.locator('#found-count')).toHaveText('0 / 8');
   await page.locator('#pause').press('Enter');
   await expect(page.locator('#pause-screen')).toBeVisible();
-  await page.locator('#restart').click();
+  await captureWithKeyboard(page, '#restart');
   await expect(page.locator('#pause-screen')).not.toBeVisible();
   await expect(page.locator('#pause')).toHaveAttribute('aria-label', 'Pause game');
   await expect(page.locator('#miss-count')).toHaveText('8 / 8');
@@ -277,10 +439,7 @@ test.describe('mobile', () => {
     await page.mouse.down();
     await page.mouse.move(100, 380, { steps: 10 });
     await page.mouse.up();
-    const afterLook = await page.screenshot({ clip: crop });
-    expect(beforeLook.equals(afterLook), 'Dragging should change the mobile camera view').toBe(
-      false,
-    );
+    await expectViewChanged(page, beforeLook, crop);
     await page.locator('#pause').tap();
     await expect(page.locator('#pause-screen')).toBeVisible();
     expect(
