@@ -71,3 +71,7 @@ npm run test:e2e
 - `tests/`: model, camera, and browser checks.
 
 Rendering, player collision, AI navigation, and visibility use the same map geometry. The model accepts a seeded random source for reproducible tests. No backend, account, telemetry, or API key is needed.
+
+## Play online
+
+[Play the hosted game](https://intrepion.github.io/kata-meccha-chameleon-clone-astra-6-ultra/)
