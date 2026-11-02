@@ -75,3 +75,7 @@ Rendering, player collision, AI navigation, and visibility use the same map geom
 ## Play online
 
 [Play the hosted game](https://intrepion.github.io/kata-meccha-chameleon-clone-astra-6-ultra/)
+
+## Arcade metadata
+
+See [docs/arcade-metadata.md](docs/arcade-metadata.md) for the game-owned manifest and screenshot provenance.

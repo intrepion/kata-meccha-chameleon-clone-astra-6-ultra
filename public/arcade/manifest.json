@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "gameId": "kata-meccha-chameleon-clone-astra-6-ultra",
+  "playUrl": "https://intrepion.github.io/kata-meccha-chameleon-clone-astra-6-ultra/",
+  "screenshots": [
+    {
+      "path": "arcade/screenshots/view-01.jpg",
+      "sha256": "e769b0a69cb98d334c33f76bf45be5903520595aa764ca182be0150890253bb0",
+      "alt": "Gameplay capture 1",
+      "provenance": {
+        "kind": "existing_repository_capture",
+        "sourcePath": "docs/hider-third-person.png",
+        "deployedBuild": null,
+        "captureDate": null
+      }
+    }
+  ]
+}
