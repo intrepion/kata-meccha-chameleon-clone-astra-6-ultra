@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "workflowCommit": "c7b9b58a3659192633beed20afe21ce0b764b617",
+  "sourceCommit": "963db42763c0094df8685e9dd9f5e1e9421098b9",
+  "runId": "41423905386",
+  "url": "http://127.0.0.1:4259/",
+  "inputs": {
+    "index.html": "cc48b43705663f644313fed6d0a30201458c561ce2b0a44bf9ed298010e1ff6c",
+    "assets/dm-sans-latin-ext-wght-normal-BOFOeGcA.woff2": "a5d38fe99f930275684999b462c7123faa063d9e44e73b4b241723d884aa0f49",
+    "assets/dm-sans-latin-wght-normal-Xz1IZZA0.woff2": "9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543",
+    "assets/fraunces-latin-ext-wght-italic-BfTTTDIL.woff2": "877bcc2fd1be299c950d0971578336818ca5818e1e956f12e0d8c6736436ca45",
+    "assets/fraunces-latin-wght-italic-Py8at3oI.woff2": "bceec2ef4d549efbc8df0194a8d5280b6a64c3e399244dffccd9ea1bd9ad6db7",
+    "assets/fraunces-vietnamese-wght-italic-BicUS2cM.woff2": "ac2dd51d493b4c65b18ee613fd17662990578396c5a38da441a8678d1a18f6bc",
+    "assets/index-DEW-KQe-.css": "13392629ca8d90e5762ba24458da689477d9277a885cf52c1a000b9ff7aa4af6",
+    "assets/index-I1fyZPgi.js": "9b6b5c758244bbda5d8e302a539a790221e47977a0bf67da2a0b47deb125cab1"
+  },
+  "browser": "153.0.8010.12",
+  "viewport": {
+    "width": 1280,
+    "height": 1000
+  },
+  "screenshots": ["meccha-astra-01.png", "meccha-astra-02.png"]
+}

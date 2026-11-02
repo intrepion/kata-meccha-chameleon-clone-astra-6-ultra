@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "gameId": "kata-meccha-chameleon-clone-astra-6-ultra",
   "playUrl": "https://intrepion.github.io/kata-meccha-chameleon-clone-astra-6-ultra/",
   "screenshots": [
@@ -12,6 +12,56 @@
         "sourcePath": "docs/hider-third-person.png",
         "deployedBuild": null,
         "captureDate": null
+      }
+    },
+    {
+      "path": "arcade/screenshots/ci-20261102-01.jpg",
+      "sha256": "864f28bd7507ed29d0227671cdc00fd6d8da3a2755a7cd76cce24406ff067d2b",
+      "alt": "Meccha Chameleon gameplay, view 1",
+      "provenance": {
+        "kind": "ci_gameplay_capture",
+        "sourcePath": "arcade/capture-evidence/ci-20261102-01.png",
+        "sourceSha256": "12302cf999af17d61c4c3ca902efe276f3c793e60a55dcab50c2ac33374d38d3",
+        "captureCommit": "963db42763c0094df8685e9dd9f5e1e9421098b9",
+        "workflowRunId": "41423905386",
+        "inputHashes": {
+          "index.html": "cc48b43705663f644313fed6d0a30201458c561ce2b0a44bf9ed298010e1ff6c",
+          "assets/dm-sans-latin-ext-wght-normal-BOFOeGcA.woff2": "a5d38fe99f930275684999b462c7123faa063d9e44e73b4b241723d884aa0f49",
+          "assets/dm-sans-latin-wght-normal-Xz1IZZA0.woff2": "9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543",
+          "assets/fraunces-latin-ext-wght-italic-BfTTTDIL.woff2": "877bcc2fd1be299c950d0971578336818ca5818e1e956f12e0d8c6736436ca45",
+          "assets/fraunces-latin-wght-italic-Py8at3oI.woff2": "bceec2ef4d549efbc8df0194a8d5280b6a64c3e399244dffccd9ea1bd9ad6db7",
+          "assets/fraunces-vietnamese-wght-italic-BicUS2cM.woff2": "ac2dd51d493b4c65b18ee613fd17662990578396c5a38da441a8678d1a18f6bc",
+          "assets/index-DEW-KQe-.css": "13392629ca8d90e5762ba24458da689477d9277a885cf52c1a000b9ff7aa4af6",
+          "assets/index-I1fyZPgi.js": "9b6b5c758244bbda5d8e302a539a790221e47977a0bf67da2a0b47deb125cab1"
+        },
+        "publishedFilesVerifiedAt": "2026-11-02T19:01:20Z",
+        "captureRecordPath": "arcade/capture-evidence/ci-20261102-record.json",
+        "captureRecordSha256": "895878b6a06d9bc54dc202e82c587e959014bac6ba392b5dbdea60f8c9267c9f"
+      }
+    },
+    {
+      "path": "arcade/screenshots/ci-20261102-02.jpg",
+      "sha256": "25a6b44b8020f545c3f2a782e6f4e690408f9b63af187469538e4cbc404c5ede",
+      "alt": "Meccha Chameleon gameplay, view 2",
+      "provenance": {
+        "kind": "ci_gameplay_capture",
+        "sourcePath": "arcade/capture-evidence/ci-20261102-02.png",
+        "sourceSha256": "a564d1e8162f98a5a2dfb573f3d39d62473e0975fcea5fa8fefcce812126f0d6",
+        "captureCommit": "963db42763c0094df8685e9dd9f5e1e9421098b9",
+        "workflowRunId": "41423905386",
+        "inputHashes": {
+          "index.html": "cc48b43705663f644313fed6d0a30201458c561ce2b0a44bf9ed298010e1ff6c",
+          "assets/dm-sans-latin-ext-wght-normal-BOFOeGcA.woff2": "a5d38fe99f930275684999b462c7123faa063d9e44e73b4b241723d884aa0f49",
+          "assets/dm-sans-latin-wght-normal-Xz1IZZA0.woff2": "9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543",
+          "assets/fraunces-latin-ext-wght-italic-BfTTTDIL.woff2": "877bcc2fd1be299c950d0971578336818ca5818e1e956f12e0d8c6736436ca45",
+          "assets/fraunces-latin-wght-italic-Py8at3oI.woff2": "bceec2ef4d549efbc8df0194a8d5280b6a64c3e399244dffccd9ea1bd9ad6db7",
+          "assets/fraunces-vietnamese-wght-italic-BicUS2cM.woff2": "ac2dd51d493b4c65b18ee613fd17662990578396c5a38da441a8678d1a18f6bc",
+          "assets/index-DEW-KQe-.css": "13392629ca8d90e5762ba24458da689477d9277a885cf52c1a000b9ff7aa4af6",
+          "assets/index-I1fyZPgi.js": "9b6b5c758244bbda5d8e302a539a790221e47977a0bf67da2a0b47deb125cab1"
+        },
+        "publishedFilesVerifiedAt": "2026-11-02T19:01:20Z",
+        "captureRecordPath": "arcade/capture-evidence/ci-20261102-record.json",
+        "captureRecordSha256": "895878b6a06d9bc54dc202e82c587e959014bac6ba392b5dbdea60f8c9267c9f"
       }
     }
   ]
